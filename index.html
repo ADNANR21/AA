@@ -53,11 +53,12 @@
 
     <script>
         // 🌟 تحديد الرابط الكامل والمباشر لتفادي أي خطأ في مسار الاتصال المباشر
-           const API_URL = "https://onrender.com";
+          
         
 
         async function loadTreeFromServer() {
             try {
+                 const API_URL = "https://onrender.com";
                 const response = await fetch(API_URL);
                 const familyData = await response.json();
                 renderTree(familyData);

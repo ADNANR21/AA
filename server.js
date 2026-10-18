@@ -1,63 +1,165 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
-const fs = require('fs');
-const path = require('path');
 
 const app = express();
-app.use(cors());
+
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type']
+}));
+
 app.use(bodyParser.json());
 
-const FILE_PATH = path.join(__dirname, 'database.json');
-
-// 🌟 إرجاع الأسماء الحقيقية لعائلتك الكريمة
-const initialFamilyData = [
-    { id: 1, name: "منيع بن سعود", pid: null },
-    { id: 2, name: "مزيد", pid: 1 },
-    { id: 3, name: "علي", pid: 2 },
-    { id: 4, name: "سعود", pid: 2 },
-    { id: 5, name: "سعد", pid: 2 }
+// 🌟 الحل السحري: حفظ الأسماء داخل ذاكرة السيرفر مباشرة (RAM) لتجنب حظر الملفات أونلاين
+let familyData = [
+    { id: 1, name: "شجرة المزيد", pid: null }
 ];
 
-function readDataFromFile() {
-    try {
-        if (!fs.existsSync(FILE_PATH)) {
-            fs.writeFileSync(FILE_PATH, JSON.stringify(initialFamilyData, null, 2), 'utf8');
-            return initialFamilyData;
-        }
-        const fileContent = fs.readFileSync(FILE_PATH, 'utf8');
-        return JSON.parse(fileContent);
-    } catch (error) {
-        return initialFamilyData;
-    }
-}
-
-function writeDataToFile(data) {
-    try {
-        fs.writeFileSync(FILE_PATH, JSON.stringify(data, null, 2), 'utf8');
-    } catch (error) {
-        console.error("خطأ في الحفظ:", error);
-    }
-}
-
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
+    res.send(`
+    <!DOCTYPE html>
+    <html lang="ar" dir="rtl">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+        <title>شجرة عائلة المزيد التفاعلية</title>
+        <script src="https://balkan.app/js/FamilyTree.js"></script>
+        <style>
+            * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+            body {
+                font-family: 'Segoe UI', sans-serif;
+                margin: 0; padding: 0; background-color: #f4f8f4;
+                display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+            }
+            #control-panel {
+                background-color: #ffffff; padding: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.06);
+                display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: center; z-index: 100; border-bottom: 3px solid #27ae60;
+            }
+            .input-group { display: flex; align-items: center; gap: 8px; }
+            label { font-weight: bold; color: #2c3e50; font-size: 14px; }
+            input, select, button { padding: 10px 12px; font-size: 14px; border: 1px solid #dcdde1; border-radius: 8px; outline: none; }
+            input:focus, select:focus { border-color: #27ae60; }
+            input { width: 180px; } select { width: 180px; }
+            button { background-color: #27ae60; color: white; border: none; cursor: pointer; font-weight: bold; }
+            #tree-container { flex-grow: 1; width: 100%; height: calc(100vh - 85px); }
+            .bft-node rect { fill: url(#leafGradient) !important; stroke: #1e8449 !important; stroke-width: 2px !important; }
+            .bft-node text { fill: #ffffff !important; font-weight: bold !important; font-size: 15px !important; }
+            .bft-link { stroke: #8a6d44 !important; stroke-width: 3px !important; }
+            @media (max-width: 600px) {
+                #control-panel { padding: 12px; gap: 10px; flex-direction: column; align-items: stretch; }
+                .input-group { justify-content: space-between; }
+                input, select { width: auto; flex-grow: 1; }
+            }
+        </style>
+    </head>
+    <body>
+        <div id="control-panel">
+            <div class="input-group">
+                <label>الابن الجديد:</label>
+                <input type="text" id="newName" placeholder="اكتب الاسم هنا">
+            </div>
+            <div class="input-group">
+                <label>تابع للأب:</label>
+                <select id="parentSelect"></select>
+            </div>
+            <button onclick="addNewBranch()">إنبات غصن جديد 🌱</button>
+        </div>
+        <div id="tree-container"></div>
+        <svg style="display:none;"><defs><linearGradient id="leafGradient" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#2ecc71;" /><stop offset="100%" style="stop-color:#27ae60;" /></linearGradient></defs></svg>
+        <script>
+            const API_URL = "/api/tree";
+            let tree;
+
+            async function loadTreeFromServer() {
+                try {
+                    const response = await fetch(API_URL);
+                    const data = await response.json();
+                    renderTree(data);
+                } catch (error) { console.error("خطأ قراءة:", error); }
+            }
+
+            function renderTree(data) {
+                if(!data || data.length === 0) return;
+                document.getElementById("tree-container").innerHTML = "";
+                
+                tree = new FamilyTree(document.getElementById("tree-container"), {
+                    mouseScroller: true, showXControls: true, searchFields: ["name"],
+                    scaleInitial: 0.7, orientation: FamilyTree.orientation.top,
+                    nodeBinding: { field_0: "name" }
+                });
+
+                tree.on('click', function (sender, args) {
+                    document.getElementById("parentSelect").value = args.node.id;
+                });
+
+                FamilyTree.templates.tomlark.node = '<rect x="0" y="0" width="140" height="60" style="clip-path: url(#leafClip);"></rect>';
+                tree.load(data);
+                updateParentDropdown(data);
+            }
+
+            function updateParentDropdown(data) {
+                const select = document.getElementById("parentSelect");
+                const previousValue = select.value;
+                select.innerHTML = "";
+                
+                const sortedData = [...data].sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+                sortedData.forEach(member => {
+                    const option = document.createElement("option");
+                    option.value = member.id; option.textContent = member.name;
+                    select.appendChild(option);
+                });
+
+                if (previousValue && select.querySelector(\`option[value="\${previousValue}"]\`)) {
+                    select.value = previousValue;
+                }
+            }
+
+            async function addNewBranch() {
+                const nameInput = document.getElementById("newName");
+                const parentSelect = document.getElementById("parentSelect");
+                if (!nameInput.value.trim()) return alert("اكتب الاسم أولاً!");
+                
+                const payload = { name: nameInput.value.trim(), pid: Number(parentSelect.value) };
+                
+                try {
+                    const response = await fetch(API_URL, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(payload)
+                    });
+                    const result = await response.json();
+                    if (result.success) { nameInput.value = ""; renderTree(result.data); }
+                } catch (error) { alert("خطأ في الاتصال بالسيرفر الخارجي."); }
+            }
+            window.onload = loadTreeFromServer;
+        </script>
+        <svg width="0" height="0"><defs><clipPath id="leafClip" clipPathUnits="objectBoundingBox"><path d="M 0,0 C 0.5,0 1,0.5 1,1 C 0.5,1 0,0.5 0,0 Z" /></clipPath></defs></svg>
+    </body>
+    </html>
+    `);
 });
 
-app.get('/api/tree', (req, res) => { res.json(readDataFromFile()); });
+app.get('/api/tree', (req, res) => {
+    res.json(familyData);
+});
 
 app.post('/api/tree', (req, res) => {
     const { name, pid } = req.body;
-    if (!name || pid === undefined || pid === null) return res.status(400).json({ error: "بيانات ناقصة" });
+    if (!name || pid === undefined || pid === null) {
+        return res.status(400).json({ error: "بيانات ناقصة" });
+    }
     
-    let familyData = readDataFromFile();
     const maxId = familyData.reduce((max, item) => item.id > max ? item.id : max, 0);
     const newId = maxId + 1;
     
     familyData.push({ id: newId, pid: Number(pid), name: name.trim() });
-    writeDataToFile(familyData);
+    
     res.json({ success: true, data: familyData });
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => { console.log(`🚀 السيرفر يعمل على http://localhost:${PORT}`); });
+app.listen(PORT, () => {
+    console.log(`🚀 السيرفر الخارجي جاهز 100%`);
+});
